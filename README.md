@@ -23,7 +23,8 @@ HeapBuddy is a command-line heap dump (HPROF) analyzer that helps you understand
 2. Run `go mod download` to install dependencies
 3. Build the application:
    ```bash
-   go build
+   # Windows
+   go build -o heapbuddy.exe
    ```
 
 ## Usage

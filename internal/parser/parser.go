@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"heapbuddy/internal/types"
 )
 
 // Constants for object alignment and header size
@@ -100,7 +102,7 @@ const (
 )
 
 type HeapStats struct {
-	ClassStats    map[uint64]*ClassInfo
+	ClassStats    map[uint64]*types.ClassInfo
 	ClassNameMap  map[uint64]string
 	StringMap     map[uint64]string
 	GCRootCount   int
@@ -182,18 +184,6 @@ type HProfRecordHeapSummary struct {
 	TotalInstancesAllocated uint64
 }
 
-// ClassInfo holds information about a Java class in the heap dump
-type ClassInfo struct {
-	ClassId           uint64
-	SuperClassId      uint64
-	ClassName         string
-	InstanceCount     uint32
-	InstanceSize      int64
-	TotalShallowSize  int64
-	TotalRetainedSize int64
-	ArrayBytes        int64
-}
-
 type HProfRootJNIGlobal struct {
 	ObjectId uint64
 }
@@ -237,7 +227,7 @@ func NewParser(filename string) (*HProfParser, error) {
 		file:           file,
 		identifierSize: 8, // Default to 8, will be updated from header
 		stats: &HeapStats{
-			ClassStats:   make(map[uint64]*ClassInfo),
+			ClassStats:   make(map[uint64]*types.ClassInfo),
 			ClassNameMap: make(map[uint64]string),
 			StringMap:    make(map[uint64]string),
 			SystemProps:  make(map[string]string),
@@ -367,7 +357,7 @@ func (p *HProfParser) Parse() (*HeapStats, error) {
 	}
 
 	p.stats = &HeapStats{
-		ClassStats:      make(map[uint64]*ClassInfo),
+		ClassStats:      make(map[uint64]*types.ClassInfo),
 		ClassNameMap:    make(map[uint64]string),
 		StringMap:       make(map[uint64]string),
 		SystemProps:     make(map[string]string),
@@ -501,7 +491,7 @@ func (p *HProfParser) Parse() (*HeapStats, error) {
 
 					// Initialize class stats if not already present
 					if _, exists := p.stats.ClassStats[classId]; !exists {
-						p.stats.ClassStats[classId] = &ClassInfo{
+						p.stats.ClassStats[classId] = &types.ClassInfo{
 							ClassId:       classId,
 							ClassName:     className,
 							InstanceCount: 0,
@@ -633,7 +623,7 @@ func (p *HProfParser) parseRecord() (interface{}, error) {
 		// Initialize class info if not already present
 		if _, exists := p.stats.ClassStats[classId]; !exists {
 			if className, ok := p.stats.StringMap[classNameId]; ok {
-				p.stats.ClassStats[classId] = &ClassInfo{
+				p.stats.ClassStats[classId] = &types.ClassInfo{
 					ClassId:   classId,
 					ClassName: className,
 				}
@@ -917,7 +907,7 @@ func (p *HProfParser) parseClassDump() error {
 
 	// Update class stats
 	if _, exists := p.stats.ClassStats[classID]; !exists {
-		p.stats.ClassStats[classID] = &ClassInfo{
+		p.stats.ClassStats[classID] = &types.ClassInfo{
 			ClassId:      classID,
 			SuperClassId: superClassID,
 			InstanceSize: int64(instanceSize),

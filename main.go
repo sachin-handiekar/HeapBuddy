@@ -1,6 +1,6 @@
 package main
 
-import "heapbuddy/cmd/cli/cmd"
+import "heapbuddy/cmd"
 
 func main() {
 	cmd.Execute()
