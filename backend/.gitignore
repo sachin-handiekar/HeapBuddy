@@ -1,0 +1,4 @@
+# Built binary (produced by `make build`; the embedded UI is staged under
+# internal/server/webui, which has its own .gitignore).
+/heapbuddy
+/heapbuddy.exe

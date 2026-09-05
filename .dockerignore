@@ -1,0 +1,17 @@
+# Keep the build context small and reproducible.
+**/node_modules
+**/.git
+frontend/dist
+frontend/.env
+frontend/.env.*
+backend/heapbuddy
+backend/heapbuddy.exe
+# Staged SPA artifacts — the image rebuilds and embeds these fresh.
+backend/internal/server/webui/assets
+backend/internal/server/webui/_shell.html
+# Test/coverage artifacts and sample dumps.
+**/coverage.out
+**/coverage.html
+**/coverage.txt
+*.hprof
+*.report.html

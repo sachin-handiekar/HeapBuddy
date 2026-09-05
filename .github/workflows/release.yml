@@ -1,0 +1,135 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # Manual run from the Actions tab: publishes the Docker image only (the binary
+  # release-upload needs a real tag). Pick the branch/ref to build from in the UI.
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Extra image tag to publish (e.g. v1.0.0 or edge); ':latest' is always applied"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  # Build the SPA once and share it with the per-platform binary builds.
+  # Only relevant when cutting a real release (tag push).
+  frontend:
+    name: Build SPA
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build SPA
+        working-directory: frontend
+        run: |
+          if [ -f package-lock.json ]; then npm ci || npm install; else npm install; fi
+          npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spa
+          path: frontend/dist/client
+
+  binaries:
+    name: Build binaries
+    needs: frontend
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create/update the GitHub release
+    strategy:
+      matrix:
+        # Linux-only for now; re-add darwin/windows to distribute those CLIs.
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          # - { goos: darwin, goarch: amd64 }
+          # - { goos: darwin, goarch: arm64 }
+          # - { goos: windows, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+      - name: Download SPA
+        uses: actions/download-artifact@v4
+        with:
+          name: spa
+          path: spa
+      - name: Stage SPA into the embed dir
+        run: |
+          rm -rf backend/internal/server/webui/assets backend/internal/server/webui/_shell.html
+          cp -r spa/assets backend/internal/server/webui/assets
+          cp spa/_shell.html backend/internal/server/webui/_shell.html
+      - name: Build
+        working-directory: backend
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          PKG=github.com/sachin-handiekar/HeapBuddy/cmd
+          VERSION="${GITHUB_REF_NAME}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          BIN=heapbuddy
+          [ "$GOOS" = "windows" ] && BIN=heapbuddy.exe
+          mkdir -p ../dist
+          go build -ldflags "-s -w -X ${PKG}.version=${VERSION} -X ${PKG}.commit=${COMMIT} -X ${PKG}.date=${DATE}" -o "../dist/${BIN}" .
+      - name: Package
+        run: |
+          cd dist
+          NAME="heapbuddy_${GITHUB_REF_NAME}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip "${NAME}.zip" heapbuddy.exe && rm heapbuddy.exe
+          else
+            tar -czf "${NAME}.tar.gz" heapbuddy && rm heapbuddy
+          fi
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+
+  docker:
+    name: Build & push image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push to GHCR
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+            type=raw,value=${{ inputs.image_tag }},enable=${{ github.event_name == 'workflow_dispatch' && inputs.image_tag != '' }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ inputs.image_tag || github.ref_name }}
+            COMMIT=${{ github.sha }}

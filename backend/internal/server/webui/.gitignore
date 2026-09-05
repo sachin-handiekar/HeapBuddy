@@ -1,0 +1,5 @@
+# Built frontend assets (produced by `make build`); only placeholder.html is
+# tracked so go:embed always has content.
+_shell.html
+index.html
+assets/

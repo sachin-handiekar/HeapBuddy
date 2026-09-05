@@ -1,0 +1,76 @@
+name: Go
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & Test
+    strategy:
+      matrix:
+        # Linux-only for now; re-add windows-latest / macos-latest when needed.
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # Use bash on every OS (incl. the Windows runner, which defaults to
+        # PowerShell and mis-parses the Unix-style `./...` / coverprofile args).
+        shell: bash
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Test
+        run: go test -race -count=1 -timeout 120s -coverprofile=coverage.txt ./...
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          # Pinned (not "latest") so a new golangci-lint release can't fail CI by
+          # flagging previously-accepted code. Bump deliberately.
+          version: v1.64.8
+          working-directory: backend

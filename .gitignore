@@ -1,0 +1,26 @@
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+/heapbuddy
+/heapbuddy-*
+/dist/
+/bin/
+
+# Test & coverage artifacts
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Generated reports
+*.report.html
+
+# Editor / OS noise
+.idea/
+.vscode/
+.DS_Store
+
+# Local reference material (e-books, course notes) — not part of the project
+/jvmPerformance/
