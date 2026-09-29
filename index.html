@@ -1,0 +1,798 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HeapBuddy — Private, self-hosted Java &amp; Android heap dump analyzer</title>
+<meta name="description" content="HeapBuddy is an open-source, self-hostable .hprof analyzer. Find memory leaks with GC-root chains, dominator trees, an object inspector and OQL — all processed locally. Single binary, Docker image, and CLI." />
+<meta name="theme-color" content="#14151d" />
+<meta property="og:title" content="HeapBuddy — Private, self-hosted heap dump analyzer" />
+<meta property="og:description" content="Find Java & Android memory leaks without sending your heap dump anywhere. Single binary, Docker, CLI. MIT licensed." />
+<meta property="og:type" content="website" />
+<meta property="og:image" content="assets/overview.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%236d6af7'/%3E%3Cstop offset='1' stop-color='%23a06cf5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Ccircle cx='14' cy='14' r='6' fill='none' stroke='white' stroke-width='2.6'/%3E%3Cpath d='M18.5 18.5 24 24' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #111219;
+    --bg-2: #161722;
+    --panel: #1a1b27;
+    --panel-2: #20212f;
+    --line: #2a2c3d;
+    --line-soft: #222333;
+    --text: #e8e9f1;
+    --muted: #9a9cb3;
+    --faint: #6c6e86;
+    --indigo: #6d6af7;
+    --violet: #a06cf5;
+    --grad: linear-gradient(90deg, #6d6af7, #a06cf5);
+    --amber: #f5b454;
+    --red: #f06a6a;
+    --green: #4fd1a1;
+    --cyan: #3fc6d9;
+    --radius: 14px;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 80px; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  img { max-width: 100%; height: auto; display: block; }
+  code, pre, .mono { font-family: var(--mono); }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- nav ---------- */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(17, 18, 25, 0.78);
+    backdrop-filter: saturate(160%) blur(12px);
+    -webkit-backdrop-filter: saturate(160%) blur(12px);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .nav .wrap { display: flex; align-items: center; gap: 28px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -0.01em; }
+  .logo {
+    width: 30px; height: 30px; border-radius: 8px; background: var(--grad);
+    display: grid; place-items: center; box-shadow: 0 4px 18px -4px rgba(125, 106, 247, .6);
+  }
+  .nav-links { display: flex; gap: 24px; margin-left: 12px; font-size: 14px; color: var(--muted); }
+  .nav-links a:hover { color: var(--text); }
+  .nav-cta { margin-left: auto; display: flex; gap: 10px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px;
+    border-radius: 10px; font-size: 14px; font-weight: 600; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); transition: border-color .15s, background .15s, transform .15s;
+    cursor: pointer;
+  }
+  .btn:hover { border-color: #3d3f58; background: var(--panel-2); }
+  .btn.primary { background: var(--grad); border-color: transparent; color: #fff; box-shadow: 0 8px 30px -10px rgba(125, 106, 247, .8); }
+  .btn.primary:hover { transform: translateY(-1px); }
+  .btn.lg { height: 48px; padding: 0 22px; font-size: 15px; }
+  .btn svg { width: 18px; height: 18px; }
+
+  /* ---------- hero ---------- */
+  .hero { position: relative; padding: 88px 0 40px; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; inset: -200px -10% auto; height: 700px; z-index: -1;
+    background:
+      radial-gradient(600px 300px at 30% 30%, rgba(109, 106, 247, .22), transparent 70%),
+      radial-gradient(500px 280px at 75% 20%, rgba(160, 108, 245, .18), transparent 70%);
+  }
+  .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; text-align: center; }
+  .hero-grid > * { min-width: 0; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px; margin: 0 auto;
+    padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
+    background: rgba(26, 27, 39, .7); font-family: var(--mono); font-size: 12px; color: var(--muted);
+  }
+  .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); }
+  h1 {
+    font-size: clamp(40px, 6.4vw, 72px); line-height: 1.04; letter-spacing: -0.035em;
+    margin: 22px auto 0; max-width: 900px; font-weight: 800;
+  }
+  .grad-text { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lede { font-size: clamp(17px, 2vw, 20px); color: var(--muted); max-width: 720px; margin: 22px auto 0; }
+  .hero-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 34px; }
+
+  .cmd {
+    display: flex; align-items: center; gap: 12px; max-width: 640px; margin: 28px auto 0;
+    background: #0c0d13; border: 1px solid var(--line); border-radius: 12px; padding: 12px 12px 12px 18px;
+    font-family: var(--mono); font-size: 14px; text-align: left;
+  }
+  .cmd .prompt { color: var(--violet); user-select: none; }
+  .cmd code { flex: 1; overflow-x: auto; white-space: nowrap; color: #d9daf0; scrollbar-width: none; }
+  .copy {
+    flex: none; height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--muted); font: 500 12px var(--mono); cursor: pointer;
+  }
+  .copy:hover { color: var(--text); border-color: #3d3f58; }
+  .copy.ok { color: var(--green); border-color: rgba(79, 209, 161, .4); }
+  .hint { font-size: 13px; color: var(--faint); margin-top: 10px; }
+  .hint code { color: var(--muted); }
+
+  .shot {
+    margin: 56px auto 0; max-width: 1100px; border-radius: 16px; padding: 1px;
+    background: linear-gradient(180deg, rgba(160, 108, 245, .5), rgba(42, 44, 61, .4) 40%);
+    box-shadow: 0 40px 120px -30px rgba(109, 106, 247, .45), 0 20px 60px -20px rgba(0, 0, 0, .8);
+  }
+  .shot-inner { border-radius: 15px; overflow: hidden; background: var(--bg-2); }
+  .chrome { display: flex; align-items: center; gap: 7px; padding: 11px 14px; border-bottom: 1px solid var(--line-soft); }
+  .chrome i { width: 11px; height: 11px; border-radius: 50%; background: #34364a; }
+  .chrome span { margin-left: 12px; font: 12px var(--mono); color: var(--faint); }
+
+  /* ---------- trust strip ---------- */
+  .strip { border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); background: var(--bg-2); margin-top: 72px; }
+  .strip .wrap { display: grid; grid-template-columns: repeat(4, 1fr); }
+  .stat { padding: 26px 20px; border-left: 1px solid var(--line-soft); }
+  .stat:first-child { border-left: 0; }
+  .stat .k { font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+  .stat .v { font: 600 22px var(--mono); margin-top: 6px; }
+  .stat .s { font: 12px var(--mono); color: var(--muted); margin-top: 2px; }
+
+  /* ---------- sections ---------- */
+  section.block { padding: 110px 0 0; }
+  .sec-head { max-width: 720px; margin-bottom: 48px; }
+  .sec-head.center { margin-left: auto; margin-right: auto; text-align: center; }
+  .kicker { font: 500 12px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--violet); }
+  h2 { font-size: clamp(30px, 4vw, 44px); line-height: 1.1; letter-spacing: -0.03em; margin: 12px 0 0; font-weight: 750; }
+  .sec-head p { color: var(--muted); font-size: 18px; margin: 16px 0 0; }
+
+  .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line-soft); border-radius: var(--radius);
+    padding: 26px; transition: border-color .2s, transform .2s;
+  }
+  .card:hover { border-color: var(--line); transform: translateY(-2px); }
+  .ic {
+    width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center;
+    background: rgba(109, 106, 247, .12); border: 1px solid rgba(109, 106, 247, .3); color: #b7a8ff;
+  }
+  .ic svg { width: 20px; height: 20px; }
+  .card h3 { font-size: 17px; margin: 18px 0 6px; letter-spacing: -0.01em; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  .card code { font-size: 13px; color: #cfc6ff; background: rgba(109, 106, 247, .1); padding: 1px 5px; border-radius: 5px; }
+
+  /* ---------- feature tour ---------- */
+  .tour { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 28px; align-items: start; }
+  .tour > * { min-width: 0; }
+  .tabs { display: flex; flex-direction: column; gap: 6px; }
+  .tab {
+    text-align: left; background: transparent; border: 1px solid transparent; border-radius: 12px;
+    padding: 16px 18px; color: var(--muted); cursor: pointer; font: inherit; transition: background .15s, border-color .15s;
+  }
+  .tab:hover { background: var(--panel); }
+  .tab .t { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 600; font-size: 15px; }
+  .tab .t .n { font: 500 11px var(--mono); color: var(--faint); }
+  .tab .d { font-size: 14px; margin-top: 6px; display: none; }
+  .tab[aria-selected="true"] { background: var(--panel); border-color: var(--line); }
+  .tab[aria-selected="true"] .d { display: block; }
+  .tab[aria-selected="true"] .n { color: var(--violet); }
+  .tour .shot { margin: 0; max-width: none; }
+  .tour .shot img { width: 100%; aspect-ratio: 1874 / 934; object-fit: cover; object-position: top left; }
+  .extra { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 28px; }
+  .mini { border: 1px dashed var(--line); border-radius: 12px; padding: 18px 20px; }
+  .mini b { font-size: 15px; }
+  .mini p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+  .tag { font: 500 10px var(--mono); letter-spacing: .06em; padding: 2px 6px; border-radius: 5px; margin-left: 6px; vertical-align: 2px; }
+  .tag.opt { color: var(--amber); border: 1px solid rgba(245, 180, 84, .4); background: rgba(245, 180, 84, .08); }
+
+  /* ---------- how it works ---------- */
+  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; counter-reset: step; }
+  .step { position: relative; }
+  .step .num {
+    font: 600 13px var(--mono); color: var(--violet); display: inline-flex; align-items: center; gap: 10px;
+  }
+  .step .num::after { content: ""; width: 40px; height: 1px; background: var(--line); }
+  .step h3 { margin: 12px 0 8px; font-size: 20px; letter-spacing: -0.02em; }
+  .step p { color: var(--muted); margin: 0 0 16px; font-size: 15px; }
+
+  pre.code {
+    margin: 0; background: #0c0d13; border: 1px solid var(--line-soft); border-radius: 12px;
+    padding: 16px 18px; font-size: 13px; line-height: 1.7; overflow-x: auto; color: #d9daf0;
+  }
+  .c { color: #62657f; }
+  .p { color: var(--violet); user-select: none; }
+  .s { color: var(--green); }
+  .kw { color: #8fa2ff; }
+  .f { color: var(--amber); }
+
+  .pipeline {
+    margin-top: 40px; background: var(--panel); border: 1px solid var(--line-soft); border-radius: var(--radius);
+    padding: 28px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; align-items: stretch;
+  }
+  .node { text-align: center; padding: 0 10px; position: relative; }
+  .node + .node::before {
+    content: "→"; position: absolute; left: -9px; top: 12px; color: var(--faint); font-family: var(--mono);
+  }
+  .node .box {
+    display: inline-block; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--bg-2); font: 600 13px var(--mono); white-space: nowrap;
+  }
+  .node:first-child .box, .node:last-child .box { border-color: rgba(160, 108, 245, .5); color: #cfc6ff; }
+  .node small { display: block; margin-top: 10px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+
+  /* ---------- install ---------- */
+  .install { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+  .itabs { display: flex; gap: 4px; padding: 4px; background: var(--bg-2); border: 1px solid var(--line-soft); border-radius: 12px; width: max-content; max-width: 100%; overflow-x: auto; }
+  .itab {
+    border: 0; background: transparent; color: var(--muted); font: 500 13px var(--mono);
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; white-space: nowrap;
+  }
+  .itab[aria-selected="true"] { background: var(--panel-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+  .ipanel { margin-top: 16px; }
+  .ipanel[hidden] { display: none; }
+  .ipanel p { color: var(--muted); font-size: 14px; margin: 12px 0 0; }
+  .codewrap { position: relative; }
+  .codewrap .copy { position: absolute; top: 10px; right: 10px; }
+
+  .flags { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .flags th, .flags td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  .flags th { font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+  .flags td:first-child { font-family: var(--mono); font-size: 13px; color: #cfc6ff; white-space: nowrap; }
+  .flags td:last-child { color: var(--muted); }
+  .tablecard { background: var(--panel); border: 1px solid var(--line-soft); border-radius: var(--radius); padding: 8px 12px 4px; overflow-x: auto; }
+
+  /* ---------- oql / api ---------- */
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  .split .card h3 { margin-top: 0; }
+  .split .card p { margin-bottom: 16px; }
+
+  /* ---------- compare ---------- */
+  .compare { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14.5px; }
+  .compare th, .compare td { padding: 13px 16px; border-bottom: 1px solid var(--line-soft); text-align: center; }
+  .compare th:first-child, .compare td:first-child { text-align: left; color: var(--muted); }
+  .compare thead th { font-weight: 600; font-size: 14px; }
+  .compare .hb { background: rgba(109, 106, 247, .07); }
+  .compare thead .hb { color: #cfc6ff; border-top: 1px solid rgba(109, 106, 247, .4); border-radius: 10px 10px 0 0; }
+  .compare .hb { border-left: 1px solid rgba(109, 106, 247, .25); border-right: 1px solid rgba(109, 106, 247, .25); }
+  .compare tbody tr:last-child .hb { border-bottom: 1px solid rgba(109, 106, 247, .4); }
+  .yes { color: var(--green); font-weight: 600; }
+  .no { color: var(--faint); }
+  .part { color: var(--amber); }
+  .note { color: var(--faint); font-size: 13px; margin-top: 14px; }
+
+  /* ---------- privacy banner ---------- */
+  .privacy {
+    display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 40px; align-items: center;
+    background:
+      radial-gradient(500px 240px at 0% 0%, rgba(109, 106, 247, .16), transparent 70%),
+      var(--panel);
+    border: 1px solid var(--line); border-radius: 20px; padding: 48px;
+  }
+  .privacy h2 { margin-top: 10px; }
+  .privacy p { color: var(--muted); font-size: 17px; }
+  .checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+  .checks li { display: flex; gap: 12px; align-items: flex-start; font-size: 15px; }
+  .checks svg { flex: none; width: 20px; height: 20px; color: var(--green); margin-top: 2px; }
+  .checks li span { color: var(--muted); }
+  .checks li b { color: var(--text); font-weight: 600; }
+
+  /* ---------- final cta / footer ---------- */
+  .final { text-align: center; padding: 120px 0 100px; }
+  .final h2 { font-size: clamp(34px, 5vw, 54px); }
+  .final p { color: var(--muted); font-size: 18px; margin: 16px auto 0; max-width: 560px; }
+  footer { border-top: 1px solid var(--line-soft); padding: 32px 0 48px; color: var(--faint); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; }
+  footer nav { display: flex; flex-wrap: wrap; gap: 20px; margin-left: auto; }
+  footer a:hover { color: var(--text); }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 960px) {
+    .nav-links { display: none; }
+    .grid-3, .steps, .extra { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tour, .install, .split, .privacy { grid-template-columns: minmax(0, 1fr); }
+    .tabs { flex-direction: row; overflow-x: auto; }
+    .tab { flex: none; }
+    .tab .d { display: none !important; }
+    .pipeline { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+    .node + .node::before { content: "↓"; left: 50%; top: -20px; transform: translateX(-50%); }
+    .strip .wrap { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stat:nth-child(3) { border-left: 0; }
+    .stat:nth-child(n+3) { border-top: 1px solid var(--line-soft); }
+    .privacy { padding: 32px; }
+  }
+  @media (max-width: 620px) {
+    .wrap { padding: 0 16px; }
+    .grid-3, .steps, .extra { grid-template-columns: minmax(0, 1fr); }
+    .nav-cta .btn.gh span { display: none; }
+    .hero { padding-top: 56px; }
+    section.block { padding-top: 80px; }
+    .privacy { padding: 24px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="HeapBuddy home">
+      <span class="logo" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/></svg>
+      </span>
+      HeapBuddy
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#why">Why HeapBuddy</a>
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#install">Install</a>
+      <a href="#compare">Compare</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn gh" href="https://github.com/sachin-handiekar/HeapBuddy" aria-label="HeapBuddy on GitHub">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.39-5.27 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+        <span>GitHub</span>
+      </a>
+      <a class="btn primary" href="#install">Get started</a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ================= HERO ================= -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <span class="eyebrow"><span class="dot"></span>Open source · MIT · Local-first</span>
+        <h1>Find the leak.<br /><span class="grad-text">Keep the heap dump.</span></h1>
+        <p class="lede">
+          HeapBuddy is a self-hostable analyzer for Java &amp; Android <code class="mono">.hprof</code> heap dumps.
+          Leak suspects with GC-root chains, retained-size dominator trees, an object inspector and OQL —
+          processed entirely on your machine. Your dump never leaves it.
+        </p>
+        <div class="hero-actions">
+          <a class="btn primary lg" href="#install">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+            Install HeapBuddy
+          </a>
+          <a class="btn lg" href="https://github.com/sachin-handiekar/HeapBuddy">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            Star on GitHub
+          </a>
+        </div>
+        <div class="cmd" role="group" aria-label="Quick start command">
+          <span class="prompt">$</span>
+          <code id="hero-cmd">docker run --rm -p 8080:8080 ghcr.io/sachin-handiekar/heapbuddy:latest</code>
+          <button class="copy" data-copy="#hero-cmd" type="button">copy</button>
+        </div>
+        <div class="hint">Then open <code>http://localhost:8080</code> and drop in a <code>.hprof</code> file.</div>
+      </div>
+
+      <div class="shot">
+        <div class="shot-inner">
+          <div class="chrome"><i></i><i></i><i></i><span>localhost:8080/report/rpt_…</span></div>
+          <img src="assets/overview.png" alt="HeapBuddy overview report showing heap size, live objects, top memory consumers, heap by class, leak suspects and wasted memory" width="1874" height="934" />
+        </div>
+      </div>
+    </div>
+
+    <div class="strip">
+      <div class="wrap">
+        <div class="stat"><div class="k">Network calls</div><div class="v">0</div><div class="s">no telemetry, no uploads</div></div>
+        <div class="stat"><div class="k">Deploy</div><div class="v">1 binary</div><div class="s">UI + API on one port</div></div>
+        <div class="stat"><div class="k">Report views</div><div class="v">7</div><div class="s">leaks → OQL</div></div>
+        <div class="stat"><div class="k">Accounts / DB</div><div class="v">none</div><div class="s">nothing to provision</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= WHY ================= -->
+  <section class="block" id="why">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker">Why HeapBuddy</div>
+        <h2>Heap analysis without the heavy desktop install — or the privacy risk.</h2>
+        <p>A heap dump is a snapshot of live memory: session tokens, request bodies, customer data. HeapBuddy was built so you never have to trade that away for a good report.</p>
+      </div>
+
+      <div class="grid-3">
+        <div class="card">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+          <h3>Private by design</h3>
+          <p>Dumps are parsed locally. No third-party calls, no telemetry, no account. Binds to <code>127.0.0.1</code> by default.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></div>
+          <h3>One binary, zero setup</h3>
+          <p>A single static Go binary embeds the React UI and JSON API. Or run the distroless Docker image — one command.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+          <h3>Lean by default</h3>
+          <p>A fast, low-memory pass covers leaks, histogram, inspector and waste. The heavy dominator tree is opt-in — you don't need a huge box to open a dump.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2M16 3.13a4 4 0 0 1 0 7.75M21 21v-2a4 4 0 0 0-3-3.85"/></svg></div>
+          <h3>Self-host for the whole team</h3>
+          <p>Run it once on an internal box behind your firewall and everyone gets a shared web UI. Concurrency limits and upload caps built in.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6M12 19h8"/></svg></div>
+          <h3>CI-friendly CLI</h3>
+          <p><code>heapbuddy analyze --json</code> writes clean JSON to stdout, diagnostics to stderr, and exits non-zero on failure.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4M12 11.5 6.5 17M12 11.5l5.5 5.5"/></svg></div>
+          <h3>Real analysis, honest output</h3>
+          <p>True retained sizes via a Lengauer–Tarjan dominator tree over the object graph. Views that can't be served are hidden, never faked.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FEATURES ================= -->
+  <section class="block" id="features">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker">What you get</div>
+        <h2>An interactive report, backed by a real parse of your dump.</h2>
+        <p>Seven views take you from "the heap is big" to "this field on this object is why."</p>
+      </div>
+
+      <div class="tour">
+        <div class="tabs" role="tablist" aria-label="Feature screenshots">
+          <button class="tab" role="tab" aria-selected="true" data-img="assets/overview.png" data-alt="Overview report">
+            <div class="t"><span class="n">01</span>Overview</div>
+            <div class="d">Heap size, live objects, classes, GC roots, wasted memory and leak-suspect count — plus top consumers and a heap-by-class breakdown.</div>
+          </button>
+          <button class="tab" role="tab" aria-selected="false" data-img="assets/leak-suspects.png" data-alt="Leak Suspects view">
+            <div class="t"><span class="n">02</span>Leak Suspects</div>
+            <div class="d">Classes retaining an outsized share of the heap, each with a GC-root reference chain and the accumulation point where memory piles up.</div>
+          </button>
+          <button class="tab" role="tab" aria-selected="false" data-img="assets/dominator-tree.png" data-alt="Dominator Tree view">
+            <div class="t"><span class="n">03</span>Dominator Tree <span class="tag opt">OPT-IN</span></div>
+            <div class="d">Objects ranked by true retained size — what would actually be freed — lazily expandable with per-node share of heap.</div>
+          </button>
+          <button class="tab" role="tab" aria-selected="false" data-img="assets/object-inspector.png" data-alt="Object Inspector view">
+            <div class="t"><span class="n">04</span>Object Inspector</div>
+            <div class="d">Drill into any class or instance: its fields, plus incoming ("who keeps this alive?") and outgoing references — all navigable.</div>
+          </button>
+        </div>
+        <div class="shot">
+          <div class="shot-inner">
+            <div class="chrome"><i></i><i></i><i></i><span id="tour-url">HeapBuddy · Overview</span></div>
+            <img id="tour-img" src="assets/overview.png" alt="Overview report" width="1874" height="934" loading="lazy" />
+          </div>
+        </div>
+      </div>
+
+      <div class="extra">
+        <div class="mini"><b>Class Histogram</b><p>Per-class instance counts, shallow size and class-aggregated retained size.</p></div>
+        <div class="mini"><b>Duplicates &amp; Wasted</b><p>Duplicate strings, inefficient collections, boxed primitives and duplicate arrays — with bytes you can reclaim.</p></div>
+        <div class="mini"><b>OQL Console <span class="tag opt">OPT-IN</span></b><p>Query the heap with a SQL-like language, MAT-style.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= HOW IT WORKS ================= -->
+  <section class="block" id="how">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker">How it works</div>
+        <h2>From <span class="mono" style="font-size:.8em">OutOfMemoryError</span> to root cause in three steps.</h2>
+      </div>
+
+      <div class="steps">
+        <div class="step">
+          <span class="num">01</span>
+          <h3>Capture a heap dump</h3>
+          <p>Grab one on demand from a running JVM, or have the JVM write one automatically when it runs out of memory.</p>
+<pre class="code"><span class="c"># on demand (modern JDKs)</span>
+<span class="p">$ </span>jcmd <span class="f">&lt;pid&gt;</span> GC.heap_dump app.hprof
+
+<span class="c"># automatically on OOM</span>
+<span class="p">$ </span>java <span class="kw">-XX:+HeapDumpOnOutOfMemoryError</span> \
+    <span class="kw">-XX:HeapDumpPath</span>=/dumps -jar app.jar
+
+<span class="c"># Android: convert to standard HPROF</span>
+<span class="p">$ </span>hprof-conv leak.hprof app.hprof</pre>
+        </div>
+        <div class="step">
+          <span class="num">02</span>
+          <h3>Start HeapBuddy</h3>
+          <p>Run the container or binary locally. It listens on localhost and serves the UI and API on one port.</p>
+<pre class="code"><span class="p">$ </span>docker run --rm -p 8080:8080 \
+    ghcr.io/sachin-handiekar/heapbuddy:latest
+
+<span class="c"># or the binary, with deep analysis on</span>
+<span class="p">$ </span>heapbuddy serve <span class="kw">--enable-advanced-analysis</span></pre>
+        </div>
+        <div class="step">
+          <span class="num">03</span>
+          <h3>Upload &amp; explore</h3>
+          <p>Drop the <code class="mono">.hprof</code> into the browser — or script it against the JSON API — and follow the leak.</p>
+<pre class="code"><span class="c"># open http://localhost:8080, or:</span>
+<span class="p">$ </span>curl -F <span class="s">"file=@app.hprof"</span> \
+    localhost:8080/api/analyze
+<span class="c">→ {"id":"rpt_…"}</span>
+
+<span class="p">$ </span>curl localhost:8080/api/reports/<span class="f">rpt_…</span>/leaks</pre>
+        </div>
+      </div>
+
+      <div class="pipeline" aria-label="Analysis pipeline">
+        <div class="node"><span class="box">.hprof</span><small>Java or Android<br />heap dump</small></div>
+        <div class="node"><span class="box">parser</span><small>classes, objects, GC roots, statics, strings — hardened against hostile input</small></div>
+        <div class="node"><span class="box">HeapStats</span><small>per-class aggregates, duplicates &amp; waste</small></div>
+        <div class="node"><span class="box">ref graph</span><small>"who points at me?" index, anchored at real GC roots</small></div>
+        <div class="node"><span class="box">dominator tree</span><small>Lengauer–Tarjan, exact retained sizes — built lazily</small></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= INSTALL ================= -->
+  <section class="block" id="install">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker">Install</div>
+        <h2>Pick your flavour. Be analyzing in a minute.</h2>
+        <p>Docker image, prebuilt Linux binaries, or build from source with Go 1.22+.</p>
+      </div>
+
+      <div class="install">
+        <div>
+          <div class="itabs" role="tablist" aria-label="Install method">
+            <button class="itab" role="tab" aria-selected="true" aria-controls="i-docker">Docker</button>
+            <button class="itab" role="tab" aria-selected="false" aria-controls="i-binary">Binary</button>
+            <button class="itab" role="tab" aria-selected="false" aria-controls="i-source">Source</button>
+            <button class="itab" role="tab" aria-selected="false" aria-controls="i-cli">CLI</button>
+          </div>
+
+          <div class="ipanel" id="i-docker" role="tabpanel">
+            <div class="codewrap">
+<pre class="code" id="c-docker"><span class="c"># try it</span>
+docker run --rm -p 8080:8080 ghcr.io/sachin-handiekar/heapbuddy:latest
+
+<span class="c"># run as a team service, with advanced views</span>
+docker run -d --name heapbuddy --restart unless-stopped \
+  -e HEAPBUDDY_ENABLE_ADVANCED_ANALYSIS=1 \
+  -p 8080:8080 ghcr.io/sachin-handiekar/heapbuddy:latest</pre>
+              <button class="copy" data-copy="#c-docker" type="button">copy</button>
+            </div>
+            <p>Multi-arch (amd64 / arm64) distroless image on GHCR, built on every tagged release.</p>
+          </div>
+
+          <div class="ipanel" id="i-binary" role="tabpanel" hidden>
+            <div class="codewrap">
+<pre class="code" id="c-binary"><span class="c"># grab linux_amd64 or linux_arm64 from Releases, then:</span>
+tar -xzf heapbuddy_&lt;version&gt;_linux_amd64.tar.gz
+./heapbuddy serve          <span class="c"># → http://localhost:8080</span></pre>
+              <button class="copy" data-copy="#c-binary" type="button">copy</button>
+            </div>
+            <p>Prebuilt archives are on the <a href="https://github.com/sachin-handiekar/HeapBuddy/releases" style="color:#cfc6ff">GitHub Releases</a> page. The binary embeds the full web UI.</p>
+          </div>
+
+          <div class="ipanel" id="i-source" role="tabpanel" hidden>
+            <div class="codewrap">
+<pre class="code" id="c-source">git clone https://github.com/sachin-handiekar/HeapBuddy.git
+cd HeapBuddy/backend
+make build          <span class="c"># builds UI, embeds it, compiles ./heapbuddy</span>
+./heapbuddy serve
+
+<span class="c"># Go-only build (API + CLI, no embedded UI)</span>
+make build-api-only</pre>
+              <button class="copy" data-copy="#c-source" type="button">copy</button>
+            </div>
+            <p>Requires Go 1.22+ and Node 18+ (or bun) for the UI build.</p>
+          </div>
+
+          <div class="ipanel" id="i-cli" role="tabpanel" hidden>
+            <div class="codewrap">
+<pre class="code" id="c-cli"><span class="c"># human-readable summary</span>
+heapbuddy analyze heap.hprof
+
+<span class="c"># machine-readable, pipe into jq / CI checks</span>
+heapbuddy analyze --json heap.hprof | jq .
+
+<span class="c"># retention chains for large objects</span>
+heapbuddy analyze --find-leaks --max-chain 15 heap.hprof</pre>
+              <button class="copy" data-copy="#c-cli" type="button">copy</button>
+            </div>
+            <p>Diagnostics go to stderr so stdout stays clean JSON; non-zero exit on failure.</p>
+          </div>
+        </div>
+
+        <div>
+          <div class="tablecard">
+            <table class="flags">
+              <thead><tr><th>serve flag</th><th>what it does</th></tr></thead>
+              <tbody>
+                <tr><td>--addr</td><td>Listen address. Defaults to <code class="mono">127.0.0.1:8080</code>; warns if exposed.</td></tr>
+                <tr><td>--enable-advanced-analysis</td><td>Turns on the Dominator Tree and OQL views.</td></tr>
+                <tr><td>--max-upload</td><td>Upload size cap (default 8 GiB).</td></tr>
+                <tr><td>--max-concurrent</td><td>Dumps analyzed at once; excess gets 429.</td></tr>
+                <tr><td>--mem-limit</td><td>Soft memory limit — GC works harder near it.</td></tr>
+                <tr><td>--temp-dir</td><td>Where dumps are spooled. Point at tmpfs or an encrypted volume.</td></tr>
+                <tr><td>--graph-cache</td><td>Memory-map the reference graph off the Go heap.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note">Every flag also has a <code class="mono">HEAPBUDDY_*</code> environment variable. Explicit flags win.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= OQL + API ================= -->
+  <section class="block">
+    <div class="wrap">
+      <div class="split">
+        <div class="card">
+          <div class="kicker">OQL console</div>
+          <h3 style="font-size:22px;margin-top:10px">Ask the heap questions.</h3>
+          <p>A practical subset of MAT-style OQL: projections, <code>COUNT(*)</code>, object literals, <code>WHERE</code> with <code>AND</code>/<code>OR</code>, and <code>LIMIT</code>.</p>
+<pre class="code"><span class="kw">SELECT</span> COUNT(*) <span class="kw">FROM</span> java.lang.String
+
+<span class="kw">SELECT</span> s <span class="kw">FROM</span> java.lang.String s
+  <span class="kw">WHERE</span> s.length &gt; <span class="f">100</span>
+
+<span class="kw">SELECT</span> { addr: m.address, retained: m.retained }
+  <span class="kw">FROM</span> java.util.concurrent.ConcurrentHashMap m
+  <span class="kw">WHERE</span> m.retained &gt; <span class="f">50000</span></pre>
+        </div>
+        <div class="card">
+          <div class="kicker">REST API</div>
+          <h3 style="font-size:22px;margin-top:10px">Automate everything.</h3>
+          <p>Analyze once, get a report id, then read any section as JSON. Reports live in memory with a TTL — no database.</p>
+<pre class="code"><span class="kw">POST</span> /api/analyze                      <span class="c">→ {"id"}</span>
+<span class="kw">GET </span> /api/reports/<span class="f">{id}</span>/summary
+<span class="kw">GET </span> /api/reports/<span class="f">{id}</span>/histogram
+<span class="kw">GET </span> /api/reports/<span class="f">{id}</span>/leaks/detail
+<span class="kw">GET </span> /api/reports/<span class="f">{id}</span>/wasted
+<span class="kw">GET </span> /api/reports/<span class="f">{id}</span>/inspect?class=&amp;hash=
+<span class="kw">GET </span> /api/reports/<span class="f">{id}</span>/dominator-tree
+<span class="kw">POST</span> /api/report/<span class="f">{id}</span>/oql
+<span class="kw">GET </span> /healthz</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= COMPARE ================= -->
+  <section class="block" id="compare">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker">Compared</div>
+        <h2>Where HeapBuddy fits.</h2>
+        <p>Eclipse MAT and VisualVM are great tools. HeapBuddy is for when you want private, self-hosted, lightweight analysis your whole team can reach.</p>
+      </div>
+      <div class="tablecard" style="padding:0">
+        <table class="compare">
+          <thead>
+            <tr><th></th><th>Eclipse MAT</th><th>VisualVM</th><th class="hb">HeapBuddy</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Form factor</td><td>Desktop app</td><td>Desktop app</td><td class="hb">Binary · Docker · CLI</td></tr>
+            <tr><td>Self-host as a team web UI</td><td class="no">—</td><td class="no">—</td><td class="hb yes">✓</td></tr>
+            <tr><td>Leak suspects + GC-root chains</td><td class="yes">✓</td><td class="part">basic</td><td class="hb yes">✓</td></tr>
+            <tr><td>Duplicate strings / wasted memory</td><td class="part">partial</td><td class="no">—</td><td class="hb yes">✓</td></tr>
+            <tr><td>Dominator tree / true retained size</td><td class="yes">✓</td><td class="no">—</td><td class="hb yes">✓ <span class="tag opt">OPT-IN</span></td></tr>
+            <tr><td>OQL-style queries</td><td class="yes">✓</td><td class="part">basic</td><td class="hb yes">✓ <span class="tag opt">OPT-IN</span></td></tr>
+            <tr><td>JSON output for CI</td><td class="no">—</td><td class="no">—</td><td class="hb yes">✓</td></tr>
+            <tr><td>Default memory footprint</td><td>heavy</td><td>medium</td><td class="hb yes">light</td></tr>
+            <tr><td>Live JVM monitoring</td><td class="no">—</td><td class="yes">✓</td><td class="hb no">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">Capabilities evolve — verify current versions for your needs. A common combo: VisualVM to watch a live JVM, HeapBuddy to analyze dumps privately and in CI, MAT for the deepest forensics.</p>
+    </div>
+  </section>
+
+  <!-- ================= PRIVACY ================= -->
+  <section class="block">
+    <div class="wrap">
+      <div class="privacy">
+        <div>
+          <div class="kicker">Local-first</div>
+          <h2>Your heap dump is sensitive. We treat it that way.</h2>
+          <p>Uploading a dump to a hosted analyzer hands a third party everything that was in memory. HeapBuddy runs on your laptop, in your cluster, or behind your firewall — nowhere else.</p>
+        </div>
+        <ul class="checks">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>No outbound calls, no telemetry.</b> <span>Nothing phones home.</span></div></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>Localhost by default.</b> <span>Exposing it on the network prints an explicit warning.</span></div></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>Dumps are cleaned up.</b> <span>Spooled files are deleted on report eviction and swept after a crash.</span></div></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>Server-side reads are off.</b> <span>Path/URL inputs require <code class="mono">--allow-local-sources</code>.</span></div></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>Hardened parser.</b> <span>Recovers from malformed input and bounds allocations against hostile dumps.</span></div></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FINAL CTA ================= -->
+  <section class="final">
+    <div class="wrap">
+      <h2>Stop guessing where the <span class="grad-text">memory went.</span></h2>
+      <p>Free, open source, and yours to run. One command to start.</p>
+      <div class="cmd" role="group" aria-label="Quick start command">
+        <span class="prompt">$</span>
+        <code id="final-cmd">docker run --rm -p 8080:8080 ghcr.io/sachin-handiekar/heapbuddy:latest</code>
+        <button class="copy" data-copy="#final-cmd" type="button">copy</button>
+      </div>
+      <div class="hero-actions">
+        <a class="btn primary lg" href="https://github.com/sachin-handiekar/HeapBuddy">View on GitHub</a>
+        <a class="btn lg" href="https://github.com/sachin-handiekar/HeapBuddy/releases">Download a release</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="brand" style="font-size:15px">
+      <span class="logo" style="width:24px;height:24px;border-radius:6px" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/></svg>
+      </span>
+      HeapBuddy
+    </span>
+    <span>MIT licensed · © 2026 Sachin Handiekar</span>
+    <nav aria-label="Footer">
+      <a href="https://github.com/sachin-handiekar/HeapBuddy">GitHub</a>
+      <a href="https://github.com/sachin-handiekar/HeapBuddy#readme">Docs</a>
+      <a href="https://github.com/sachin-handiekar/HeapBuddy/releases">Releases</a>
+      <a href="https://github.com/sachin-handiekar/HeapBuddy/blob/main/CONTRIBUTING.md">Contributing</a>
+      <a href="https://github.com/sachin-handiekar/HeapBuddy/blob/main/SECURITY.md">Security</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  // Copy-to-clipboard buttons (strip comment lines from multi-line snippets)
+  document.querySelectorAll('.copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var el = document.querySelector(btn.dataset.copy);
+      var text = el.innerText.split('\n')
+        .filter(function (l) { return !/^\s*#/.test(l); })
+        .map(function (l) { return l.replace(/\s+#.*$/, ''); })
+        .join('\n').trim();
+      var done = function () {
+        btn.textContent = 'copied'; btn.classList.add('ok');
+        setTimeout(function () { btn.textContent = 'copy'; btn.classList.remove('ok'); }, 1600);
+      };
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {});
+    });
+  });
+
+  // Feature tour tabs
+  var tourImg = document.getElementById('tour-img');
+  var tourUrl = document.getElementById('tour-url');
+  var tabs = document.querySelectorAll('.tab');
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      tabs.forEach(function (t) { t.setAttribute('aria-selected', 'false'); });
+      tab.setAttribute('aria-selected', 'true');
+      tourImg.src = tab.dataset.img;
+      tourImg.alt = tab.dataset.alt;
+      tourUrl.textContent = 'HeapBuddy · ' + tab.querySelector('.t').childNodes[1].textContent.trim();
+    });
+  });
+
+  // Install tabs
+  var itabs = document.querySelectorAll('.itab');
+  itabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      itabs.forEach(function (t) {
+        t.setAttribute('aria-selected', 'false');
+        document.getElementById(t.getAttribute('aria-controls')).hidden = true;
+      });
+      tab.setAttribute('aria-selected', 'true');
+      document.getElementById(tab.getAttribute('aria-controls')).hidden = false;
+    });
+  });
+</script>
+</body>
+</html>
